@@ -1,0 +1,523 @@
+---
+title: 'Project: Visualising and Interpreting Networks'
+author: "Data Collection and Analytics"
+date: "13/12/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+For this assessment, you will search the New York Times, save that data, create networks from that data, compare the differences among networks, and demonstrate your proficiency with basic network descriptive statistics.
+
+**You need to upload one pdf file with the results and the code (remember to start the chunks with only \`\`\`{r})**
+
+## Part 1: Collect Network Data [20 %]
+
+### Loading and Installing Packages, Set Working Directory
+
+```{r}
+rm(list=ls(all=TRUE))
+
+library(magrittr)
+library(httr)
+library(data.table)
+library(igraph)
+library(dplyr)
+library(xml2)
+```
+
+### Choose a topic for your search terms
+
+You can decide search terms based on personal interests, research interests, or popular topical areas, among others. You have flexibility in selecting your search term list. For example, you can search for some commercial brands, celebrities, countries, universities, etc. It will be most useful if you choose a collection of words that are not all extremely common. Think about a set of words that might have interesting co-occurrences in articles within the New York Times website. For example, you might be interested in the last names of every Senator involved in a certain political debate, football teams, or cities and their co-occurrence in news articles. Generally speaking, proper nouns are best, but you might have compelling reasons to choose verbs or adjectives. You might want to throw a couple of terms in that aren't thematically related to make sure you don't get a totally connected component. The more interesting your network is in terms of differing centrality, distinct components, etc., the easier it will be to do the written analysis. Keep in mind that the Article Search archive is very large; many terms co-occur. You might want to consider two tenuously related subjects.
+
+### Create your text input
+
+Create a plain text file with .txt extension in the same directory as the R Markdown Notebook used in this assignment. Make a note of the file name for use in the next code snippet. Place one search term per line, and use 15--20 terms. You'll also likely want to add quotation marks around your search terms to ensure that you're only receiving results for the complete term. NOTE: The function will process your terms so that they work in the URL request. You do not need to encode non-alphabetic characters.
+
+The text file cannot include any additional information or characters and it must be a .txt file; Word or RTF documents won't work.
+
+### Analysis
+
+a.  Provide a high level overview of the terms you included in the search query.
+
+I have included 18 words from 3 categories which are car manufacturers, machine learning and AI and things realted to cars. Also, i have included terms that relate to road incidents and intelligent car parts such as 'Crash' or "Safety" as well as "GPS" and "sensors".
+
+b.  Why did you choose this collection of terms? Were there some specific overarching question---intellectual or extracurricular curiosity---that motivated this collection of terms?
+
+I am intrigued to analyze the relationship between cars and AI and machine learning based on the uprise of aritificial intelligence within transportaion within recent years. I am intirgued to see if there could be a relation to incidents on the road as well hence the inclusion of words like "Crash" etc. Moreover, we are seeing many new technologies being implemented in cars which use these algorithms and would like to see their correlation with road incidents.
+
+c.  How did you decide which terms to use in the search query? Were these terms you intuitively deemed important? Were they culled from a specific source or the result of some separate analysis or search query?
+
+I have been reading alot about Machine learning and AI recently and how they are used in vehicles and transport on the news. For this assigment, i used words like "Tesla", "AI" and wordd=s like "Crash", "safety" to see how artificial intelligence and road safety are associated also to see how many or how much artificial intelligence has impacted the car industry within the NY times network specifically.
+
+d.  What are the insights you hope to glean by looking at the network of terms in terms of individual node metrics, sub-grouping of nodes, overall global network properties?
+
+I would like to see certain companies like Tesla or Mercedes Benz have higher centralilty than others since they are well known brands and would most likely have a higher frequency of occurence. Also i would expect to see more links with machine learning and Ai with a company like tesla as they are one of the leaders in this field when it comes to implementing artificial intelligence within cars. As for sub grouping of nodes i would expect that the commounites would occur per category, hence words like tesla, ferrari etc. would be together and words like ML and AI and deep learning would be together. As for overall network properties i would expect a giant connected component within my network because of the inter relation between the terms.
+
+### Working with the API to Collect Your Data
+
+The New York Times controls access to its API by assigning each user a key. Each key has a limited number of calls that can be made within a certain time period. You can read more about the limitations of the API system here (<https://developer.nytimes.com/article_search_v2.json>).
+
+You will need to create your own API key to complete this assignment. Go to the New York Times developers page (<https://developer.nytimes.com/signup>) and request a key. You will copy that key (received via email) into the api variable below.
+
+```{r}
+# Import your word list
+name_of_file <- "Terms.txt" # Creates a variable called name_of_file that you should populate with the name of your text file between quotation marks.
+word_list <- read.table("Terms.txt", sep = "\n", stringsAsFactors = F) %>% unlist %>% as.vector # Reads the content of your file into a variable.
+num_words <- length(word_list) # Creates a variable with the number of words in your list.
+```
+
+Our first function will gather all of the search terms and their number of hits to be placed in a table. All lines of a function should be run together.
+
+```{r}
+url_base <- "https://api.nytimes.com/svc/search/v2/articlesearch.json"
+# When you receive the email with your API key, paste it below between the quotation marks.
+api <- 'DVLApvCMMP2qchDjUj4pwGcXTqJpHAsT'
+```
+
+Now we will invoke our function to put information from the API into our global environment.
+
+```{r}
+Get_hits_one <- function(keyword1) {
+  Sys.sleep(time=7)
+  url <- paste0(url_base, "?api-key=", api, "&q=", URLencode(keyword1),"&begin_date=","20160101") # Begin date is in format YYYYMMDD; you can change it if you want only more recent results, for example.
+  # The number of results
+  print(keyword1)
+  hits <- content(GET(url))$response$meta$hits %>% as.numeric
+  print(hits)
+  # Put results in table
+  c(SearchTerm=keyword1,ResultsTotal=hits)
+}
+```
+
+If you get zero hits for any of these terms, you should substitute that term for somethign else and rerun the lab up to this point. Next, we will define the function that will collect the article co-occurences network.
+
+```{r}
+#Create a table of your words and their number of results.
+total_table <- t(sapply(word_list,Get_hits_one))
+total_table <- as.data.frame(total_table)
+total_table$ResultsTotal <- as.numeric(as.character(total_table$ResultsTotal))
+```
+
+In this next step, we will call the API and collect the co-occurrence network. This may take some time. If you receive "numeric(0)" in any of your resposnes, you've likely hit your API key limit and will either need to wait for the calls to reset (24 hours) or request a new key. If you receive the error message "\$ operator is invalid for atomic vectors," you have also hit the API call limit. This could be due to running the script multiple times, or due to hitting too many results based on very common search terms. Request a new API, shorten your word list, and try again. Don't forget you need to reload your word list from the first part of the Lab in order to get a different set of results! You must also rerun the functions to reassign the API value. If none of your results come back as "0," you might want to redo your search with the appropriate words.
+
+```{r}
+Get_hits_two <- function(row_input) {
+  keyword1 <- row_input[1]
+  keyword2 <- row_input[2]
+  url <- paste0(url_base, "?api-key=", api, "&q=", URLencode(keyword1),"+", URLencode(keyword2),"&begin_date=","20160101") #match w/ Begin Date in Get_hits_one.
+  # The number of results
+  print(paste0(keyword1," ",keyword2)) 
+  hits <- content(GET(url))$response$meta$hits %>% as.numeric
+  print(hits)
+  Sys.sleep(time=7)
+  # Put results in table
+  c(SearchTerm1=keyword1,SearchTerm2=keyword2,CoOccurrences=hits)
+} 
+```
+
+```{r}
+# Convert the pairs list into a table
+pairs_list <- expand.grid(word_list,word_list) %>% filter(Var1 != Var2)
+pairs_list <- t(combn(word_list,2))
+#Create a network table, run the Get_hits_two function using the pairs lists
+network_table <- t(apply(pairs_list,1,Get_hits_two))
+#Convert the network table into a dataframe
+network_table <- as.data.frame(network_table)
+# Read each the content of each item within the $CoOccurreences factor as characters, 
+# then force those characters into the "numeric" or "double" type.
+network_table$CoOccurrences <- as.numeric(as.character(network_table$CoOccurrences))
+# Convert data to data.table type.
+```
+
+```{r}
+total_table <- as.data.table(total_table)
+network_table <- as.data.table(network_table)
+
+# Remove zero edges from your network
+network_table <- network_table[!CoOccurrences==0] 
+
+# Create a graph object with your data
+g_valued <- graph_from_data_frame(d = network_table[,1:3,with=FALSE],directed = FALSE,vertices = total_table)
+
+# If you're having trouble with data collection, you can load the 'NFL Lab Results.RData' file now by clicking the open folder icon on the "Environment"" tab and continue the lab from here. You'll need to figure out what the significance of the terms are yourself, however.
+# You should save your data at this point by clicking the floppy disk icon under the "Environment" tab.
+# Saving on object in RData format
+save(g_valued, file = "~/Downloads/datanetwork.RData")
+```
+
+### Analysis
+
+**Is the graph directed or inderected?**
+Undirected
+**How many nodes and links does your network have?**
+
+```{r }
+load("~/Downloads/datanetwork.RData")
+numVertices <- vcount(g_valued)
+numVertices
+```
+
+```{r }
+numEdges <- ecount(g_valued)
+numEdges
+```
+
+**What is the number of possible links in your network?**
+
+```{r }
+maxEdges <- numVertices*(numVertices-1)/2
+maxEdges
+```
+
+**What is the density of your network?**
+
+```{r }
+graphDensity <- numEdges/maxEdges # manual calculation
+graphDensity
+```
+
+```{r }
+graphDensity1 <- graph.density(g_valued) # using the graph.density function from igraph
+graphDensity1
+```
+
+**Briefly describe how your choice of dataset may influence your findings.**
+
+What differences would you expect if you use different search terms? Are the current search terms related to one another? If so, how? Do you think the limitation to one word might skew your answers? (i.e. if you're interested in Hillary Clinton, but you include "Clinton" as a term, you will get stories that mention Chelsea, Bill, & even P-Funk Allstar George Clinton).
+
+I think if i used different search terms then my density would probably decrease as some of my words are closely related to each other such as; Cars, Lexus, Toyota, as well as words like Artificial Intelligence, Machine Learning. The current search terms are in fact related to each other as the first words mentioned concern cars and car manufacturerss while other words in the list concern things like artificial intelligence and smart cars which interlink with eachother as well as words that are related to raod safety such as crash. Also there were big companies mentioned in the term list such as Mercedes Benz and Tesla. The rationale behind using these terms was to see the co-occurrence of Artificial Intelligence and autonomous vehicles with well-known car manufacturers. Moreover i believe that the mention of words such as "Smart" for example could bring up different news articles about smart indiviuals for example, and in general anything that is deemed as 'smart' but not related to cars or artifical intelligence within vehicles which could skew the answers away from the intended findings. 
+
+### Part 2: Visualize Your Network [20 %]
+
+```{r }
+## Learn more about plotting with igraph
+?? igraph.plotting
+colbar = rainbow(length(word_list)) ## we are selecting different colors to correspond to each word
+V(g_valued)$color = colbar
+# Set layout here 
+L = layout_with_fr(g_valued)  # Fruchterman Reingold
+plot(g_valued,vertex.color=V(g_valued)$color, layout = L, vertex.size=6) 
+```
+
+#### Analysis
+
+**In a paragraph, describe the macro-level structure of your graphs based on the Fruchterman Reingold visualization.**
+I can observe a giant connected component in the graph. There is a trend that is steering the connections in the network. Words that are within the same "field" or industry seem to be within close proximity of each other with dense connections. For example, the words "Ferrari" , "Mercedes Benz" are within close proximity with each other with dense connections. The same could be said about the words "Deep Learning" ,"Artificial Intelligence". We can also observe a pendant vertex which in this case is Neural networks. However, it is interesting to see that the words autonomous and crash are close to each other and words like Bueral network and tesla are as well within close proximity.
+```{r }
+## You can change the layout by picking one of the other options. Uncomment one of the lines below by erasing the # and running the line. Try to find a layout that gives you different information that Fruchterman Reingold.
+
+# L = layout_with_dh(g_valued) ## Davidson and Harel
+
+# L = layout_with_drl(g_valued) ## Force-directed
+
+ L = layout_with_kk(g_valued) ## Spring
+plot(g_valued,vertex.color=V(g_valued)$color, layout = L, vertex.size=6) 
+```
+
+#### Analysis
+
+**In a paragraph, compare and contrast the information given to you by the two different layouts.**
+The Fruchetman Reingold and Kamada Kawai layout both gave a very similair layout structure, however the kk structure did give a very narrowly more well spaced and less connected and dense graph and is visually more pleasing. Moreover, in KK layout we can see that words within the same category are coloured somewhat the same colour and they are all grouped one the same side of the graph, however in the Fruchterman Reingold visualization we can see that terms within different categories are somewhat scattered. For example, we can see that car companies are centred in one corner on the graph while terms relating to artificial intelligence are placed on the left of the graph within close proximity with eachother. 
+
+
+### Part 3: Community Detection Analysis with R [20 %]
+
+Identifying subgroups within a network is of great interest to social network researchers, so a variety of algorithms have been developed to identify and measure subgroups. We will use some of R's built in tools to identify subgroups and central nodes for visual inspection.
+
+For the remainder of the visualizations we will use the Fruchterman Reingold layout.
+
+```{r }
+?layout_with_fr
+L = layout_with_mds(g_valued) 
+```
+
+Cluster the nodes in your network.
+
+```{r }
+# Learn more about the clustering algorithm.
+?? cluster_walktrap
+cluster <- cluster_walktrap(g_valued,merges = TRUE )
+# Find the number of clusters
+membership(cluster)   # affiliation list
+```
+
+```{r }
+length(sizes(cluster))
+```
+
+```{r }
+# Find the size the each cluster 
+# Note that communities with one node are isolates, or have only a single tie
+sizes(cluster) 
+```
+
+**How many communities have been created?**
+1
+**How many nodes are in each community?**
+18 nodes in 1 cluster
+**For your network, what might each cluster of nodes potentially have in common? Describe each cluster, its membership, and the relationship between nodes in the cluster.**
+
+All words are grouped into one cluster hence this could show that all words are falling into one co-occurence tand are interlinked into one similair category and are interconnected. 
+
+```{r }
+plot(cluster, g_valued, col = V(g_valued)$color, layout = L, vertex.size=5)
+```
+
+**What information does this layout convey? Are the clusters well-separated, or is there a great deal of overlap? Is it easier to identify the common themes among clusters in this layout rather than looking only at the graphs?**
+
+This layout conveys a cluster of my data, the nodes are colored according to modularity class. coloring the nodes according to their modularity class has improved the visualization of the data as it gives a distinct color to each community within the cluster.For example, car brands such as Lexus and toyota hace the same colour nodes and words such as GPS and EV and sensors have the same colors this makes it easier to visualize a trend as the nodes are colored acccording to industry. Moreover, the cluster is not well separated as there is clearly a great deal of overlap in the center of the cluster making it hard to visualize the nodes that are in the center. however, the themes are easier to identify to an extent rather than looking data graph due to the color organization in this layout making it easier to identify themes.
+
+
+**What differences are there between nodes in the same cluster and across clusters?**
+
+Some nodes within the cluster are grouped or overlapping with eatchother in th center while others are at the corner of the layout sort f creating a pentagonal shape. Moreover, some nodes are colored differently that others within the same cluster. Clusters also vary with distance from eahother within the cluster.
+
+### Part 4: Centrality Visualization & Weighted Values [20 %]
+
+For each network, you will use centrality metrics to improve your visualization. You may need to adjust the size parameter to make your network more easily visible.
+
+#### Degree Centrality
+
+```{r }
+totalDegree <- degree(g_valued,mode="all")
+sort(totalDegree,decreasing=TRUE)[1:5]
+```
+
+```{r }
+g2 <- g_valued
+V(g2)$size <- totalDegree*0.8 #can adjust the number if nodes are too big
+plot(g2, layout = L)
+```
+
+**Briefly explain degree centrality and why nodes are more or less central in the network.**
+A node's importance in a network is gauged by its degree centrality, which is dependent on the number of edges (or connections) it has with other nodes. It is determined by counting the edges that each node possesses and normalizing it by the total number of edges in the network. Hence having a high number of connections for a node indicates its importance and popularity within a network. In my network words Tesla, Artficial Intelligence, Cars, Self driving and Mercedes benz are the popular this is due to them being frequently showing up in the NY times in multiple contexts as these topics are very popular. For example the word Artficial Intelligence could not only appear in articles relating to cars but many other things especially with the AI driven world we are living in today it is in use everywhere.
+
+
+#### Weighted Degree Centrality
+
+```{r }
+wd <- graph.strength(g_valued,weights = E(g_valued)$CoOccurrences)
+sort(wd,decreasing=TRUE)[1:5]
+```
+
+**What does the addition of weighted degree and edge information tell you about your graph?**
+Weighted degree centrality is the measure of importance of a node based on the sum of the weights of its edges connected to it. adding weights to our graph gave us a slightly different 
+top 5 central terms when in comparision to degree centraility. For example, words like Crash are now highly centralized and Smart as well as safety. Moroever, from the graph we can clearly see a thicker line going down the middle due to the fact all our highly weighted words are centralized in the middle.
+#### Betweenness Centrality
+
+**Briefly explain betweenness centrality and why nodes are more or less central in the network.**
+Based on the number of shortest paths that travel through a node, betweenness centrality assesses how important that node is in a network. It is determined by dividing the total number of shortest pathways between all pairs of nodes by the number of shortest paths between all pairs of nodes that pass through a specific node.
+
+Due to their involvement in numerous shortest pathways between other nodes, nodes with high betweenness centrality are seen as being more central in the network. Due to the fact that they link various portions of the network together, these nodes are frequently referred to as "bridges" or "gatekeepers" in the network. In my network terms like Cars, Self Driving, Artificial Intelligence and Tesla have high betweenness centrality, because they are very well-known terms hence they would be frequently reocurring in NY times articles and are more likely to be linked to many different terms.Moreover, a term like ' Artficial Intelligence' would also have a hugh betweenness because  of its posssible occurence within different contexts within the NY times.In contrast, nodes with low betweenness centrality are regarded as being less central because they do not frequently appear on shortest pathways connecting other nodes. These nodes are frequently viewed as being less significant or influential inside the network.For example, in my network the word 'lexus' has a very low betweenness centrality, this is probably due to the fact that it is not occurring as of recently frequently in the NY times.
+
+
+#### Weighted Betweenness Centrality
+
+```{r }
+wg2 <- g_valued
+V(wg2)$size <- wd*.0005 # adjust the number if nodes are too big
+plot(wg2, layout = L, edge.width=sqrt(E(g_valued)$CoOccurrences)) #taking the square root is a good way to make a large range of numbers visible in an edge. Otherwise edges tend to cover up all the other edges and obscure the relationships.
+```
+
+*What does the addition of weighted degree and edge information tell you about your graph?*
+
+When weights are added to edges, it is taken into account that pathways with more strongly linked intermediary nodes than those with weaker connections may facilitate transactions between two nodes more quickly. This is because intermediary nodes with strong connections are in communication with each other more frequently (and with larger weights) than those with weak connections. We get a different set of central nodes in our network when we apply edge weights. Now EV, ferrari, neural network and Lexus are the top 5 central nodes, in contrast to when there was no weights these were the weakest/least central nodes.
+
+```{r }
+b <- betweenness(g_valued,directed=TRUE)
+sort(b,decreasing=TRUE)[1:5]
+```
+
+```{r }
+g4 <- g_valued
+V(g4)$size <- b*1.2#can adjust the number
+plot(g4, layout = L)
+```
+
+```{r }
+wbtwn <- betweenness(g_valued,weights = E(g_valued)$CoOccurrences)
+sort(wbtwn,decreasing=TRUE)[1:5]
+```
+
+```{r }
+wBtwnG <- g_valued
+V(wBtwnG)$size <- wbtwn*.5 # adjust the number if nodes are too big
+plot(wBtwnG, layout = L, edge.width=sqrt(E(g_valued)$CoOccurrences)) #taking the square root is a good way to make a large range of numbers visible in an edge.
+```
+
+#### Closeness Centrality
+
+```{r }
+c <- closeness(g_valued)
+sort(c,decreasing=TRUE)[1:5]
+```
+
+```{r }
+g5 <- g_valued
+V(g5)$size <- c*500  #can adjust the number
+plot(g5, layout = L)
+```
+
+**Briefly explain closeness centrality and why nodes are more or less central in the network.**
+
+Based on the average distance between a node and all other nodes in the network, closeness centrality is a metric for determining a node's centrality. It is calculated as the reciprocal of the average distance between a given node and all other nodes in the network. Yet again we see that nearly all terms are most central.
+
+
+#### Weighted Closeness Centrality
+
+```{r }
+wClsnss <- closeness(g_valued,weights = E(g_valued)$CoOccurrences)
+sort(wClsnss,decreasing=TRUE)[1:5]
+```
+
+#### Eigenvector Centrality
+
+```{r }
+eigc <- eigen_centrality(g_valued,directed=TRUE)
+sort(eigc$vector,decreasing=TRUE)[1:5]
+```
+
+```{r }
+g6 <- g_valued
+V(g6)$size <- eigc$vector*30 #can adjust the number
+plot(g6, layout = L)
+```
+
+**Briefly explain eigenvector centrality and why nodes are more or less central in the network.**
+
+Eigenvector centrality is a measure of the centrality of a node in a network, based on the principle that a node is important if it is connected to other important nodes. It is calculated as the eigenvector of the adjacency matrix of the network. Hence nodes with higher eigenvalue are more central and nodes with a lower eigenvalue centrality score are deemed less central. In my network we can see that words like Cars, Tesla, Safety, Ferrari and Self driving obtained a really high eigenvalue centrality score and thisis due to their connection to other highly "important" nodes.
+
+#### Analysis
+
+**Choose the visualization that you think is most interesting and briefly explain what it tells you about a central node in your network. Discuss the type of centrality, and what that node's centrality score tells you about the search co-occurrence network.**
+
+i think the visualization where weighted degree centrality was used is the most interesting as shows the ost popular search terms in the network through a weighted method. From the visualization we observed that words like "Cars", Self Driving, Safety, Crash and Smart had the highest weighted degree centrality. This is due to the fact that these words would have a high occurrence in the NY times due to the fact that these words can appear in multiple contexts and are relatively very common and popular words in recent times. For example, a word like "smart" would occur in multiple contexts as it can mean many different things, smart people or smart cars or even a smart chess move and many others so the occurrence of the word smart could be misleading as it doesn't necessarily to smart cars/AI. Moreover, the high weighted degree value for the word Self driving shows us the domination of this field and its expansion within the world which meets the goals of this analysis where i was trying to find the occurrence of articles relating to advancements of vehicles with artificial intelligence.
+
+
+**Briefly discuss an interesting difference between types of centrality for your network.**
+
+From the network we can see that firstly, weighted degree centrality gave us the central nodes based on the most popular search terms which were Cars", Self Driving, Safety, Crash and Smart. On the other hand when were conducting betweenness centrality in order to articulate the brokers within the network we found that words like Mercedes Benz, artificial intelligence occurred whilst still having the terms self driving and cars as the most central as well. Moreover, when observing closeness centrality we also found that we were given the same results for betwenness centrality for the most central nodes in our network.
+
+### Global Network Metrics with R
+
+Compute the network centralization scores for your network for degree, betweenness, closeness, and eigenvector centrality.
+
+```{r }
+# Degree centralization
+centralization.degree(g_valued,normalized = TRUE)
+```
+
+```{r }
+# Betweenness centralization
+centralization.betweenness(g_valued,normalized = TRUE)
+```
+
+```{r }
+# Closeness centralization 
+centralization.closeness(g_valued,normalized = TRUE)
+```
+
+```{r }
+# Eigenvector centralization 
+centralization.evcent(g_valued,normalized = TRUE)
+```
+
+**Record the centralization score of each centrality measure.**
+Degree Centralization: 0.0130719
+
+Betweenness Centralization : 0.0001730104
+
+Closeness Centralization: 0.02625129
+
+Eigenvector centralization: 0.01294788
+**Briefly explain what the centralization of a network is.**
+
+The degree to which the centrality of nodes in a network is concentrated among a small number of nodes is referred to as network centralization. Hence, it assesses the degree to which centrality is spread uniformly or unevenly throughout the network. Moreover, for different measures of centrality, graph centralization will differ.
+
+**Compare the centralization scores above with the graphs you created where the nodes are scaled by centrality. Describe the appearance of more centralized v. less centralized networks.**
+Centralization scores for closeness and degree centrality seem to be the highest. Centrality as we know is the measure of how uniform centrality is spread through a graph/network. This patter can be seen in graphs with high centralization scores such as degree centrality and closeness centrality where there is a clear center within the graph which branches out to other nodes with branches radiating out from the center and they have more connections, where in contrast with graph like betwenness with a low centrality score the network would have a more evenly distributed centrality and there is no clear center within the network and all nodes would be equally central and would have roughly the same number of connections.
+
+
+### Part 5. Power Laws & Small Worlds [20 %]
+
+#### Power Laws
+
+**Define the concept of "Power Law" in network analysis**
+
+A relationship between two quantities in which one quantity varies as a power of the other is known as a power law. In network analysis, many real-world networks have a power law degree distribution, which indicates that a small number of nodes (referred to as "hubs") have numerous connections, while the bulk of nodes have comparatively few connections.
+
+Networks often demonstrate power law distributions. Plot the degree distribution of the nodes in your base graph.
+
+```{r }
+# Calculate degree distribution
+deg <- degree(g_valued,v=V(g_valued), mode="all")
+deg
+```
+
+```{r }
+# Degree distribution is the cumulative frequency of nodes with a given degree
+deg_distr <-degree.distribution(g_valued, cumulative=T, mode="all")
+deg_distr
+```
+
+```{r }
+plot(deg_distr, ylim=c(.01,1.5), bg="black",pch=21, xlab="Degree", ylab="Cumulative Frequency") #You may need to adjust the ylim to a larger or smaller number to make the graph show more data.
+```
+
+Test whether it's approximately a power law, estimate $\log f (k) = \log a \-  c \log k$. "This says that if we have a power-law relationship, and we plot $\log f(k)$ as a function of $\log k$, then we should see a straight line: $\- c$ will be the slope, and $\log a$ will be the y-intercept. Such a "log-log" plot thus provides a quick way to see if one's data exhibits an approximate power-law: it is easy to see if one has an approximately straight line, and one can read off the exponent from the slope." (E&K, Chapter 18, p.546).
+
+```{r }
+power <- power.law.fit(deg_distr)
+power
+```
+
+```{r }
+plot(deg_distr, log="xy", ylim=c(.01,1), bg="black",pch=21, xlab="Degree", ylab="Cumulative Frequency")
+```
+
+**Does your network exhibit a power law distribution of degree centrality?**
+
+The case for a power law distribution is to have an approximately straight line. In my case i believe that i have a power law distribution of degree centrality as my plot is approximately a straight line.
+
+#### Small Worlds
+
+**Define the concept of "Small World" in network analysis**
+
+In network analysis, a "small-world" network is a type of network that has a high degree of clustering yet a short average path length. Hence, in a small world network is it easy to find a short path between any two nodes.
+
+Networks often demonstrate small world characteristics. Compute the average clustering coefficient (ACC) and the characteristic path length (CPL).
+
+```{r }
+# Average clustering coefficient (ACC)
+transitivity(g_valued, type = c("average"))
+```
+
+```{r }
+# Characteristic path length (CPL)
+average.path.length(g_valued)
+```
+
+```{r }
+accSum <- 0
+cplSum <- 0
+for (i in 1:100){
+  grph <- erdos.renyi.game(numVertices, numEdges, type = "gnm")
+  accSum <- accSum + transitivity(grph, type = c("average"))
+  cplSum <- cplSum + average.path.length(grph)
+}
+accSum/100
+```
+
+```{r }
+cplSum/100
+```
+
+**Based on these data, would you conclude that the observed network demonstrates small world properties? Why or why not?**
+
+The network does not demonstrate small world properties because even though it has a high clustering coefficient value; "0.98..' it does not have a short average path length as in this case that value is approximately 1.0 which is relatively high. For a network to observe small world properties it needs to have both a high clustering coefficient and a low short average path length.
