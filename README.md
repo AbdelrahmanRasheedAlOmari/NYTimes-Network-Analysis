@@ -16,9 +16,9 @@ The main goal of this project is to visualize and interpret networks of terms re
 
 ## Files Included
 - `Webscraping.Rmd`: R Markdown file used for collecting data, performing analysis, and generating visualizations.
-- `datanetwork.RData`: R data file containing the graph object created during the analysis.
 - `Terms.txt`: Text file containing the list of search terms used for querying the New York Times API.
-- `Final.RData`: Data Containing outputs.
+- `Final.RData`: R data file containing the final processed outputs and results.
+- `cars.RData`: R data file containing data related to car terms and the network graph. - 
 
 ## Prerequisites
 - R (version 3.5 or higher)
